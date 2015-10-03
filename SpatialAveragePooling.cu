@@ -17,6 +17,7 @@ __global__ void AvePoolForward(const int nthreads,
     int wstart = pw * stride_w - pad_w;
     int hend = min(hstart + kernel_h, height + pad_h);
     int wend = min(wstart + kernel_w, width + pad_w);
+    const int pool_size = (hend - hstart) * (wend - wstart);
     hstart = max(hstart, 0);
     wstart = max(wstart, 0);
     hend = min(hend, height);
@@ -29,7 +30,7 @@ __global__ void AvePoolForward(const int nthreads,
       }
     }
     if(COUNT_INCLUDE_PAD)
-      top_data[index] = aveval / (kernel_w * kernel_h);
+      top_data[index] = aveval / pool_size;
     else
       top_data[index] = aveval / ((hend - hstart) * (wend - wstart));
   }
@@ -81,6 +82,15 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   else {
     nOutputCols = floor(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
     nOutputRows = floor(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
+  }
+  if (padW || padH)
+  {
+    // ensure that the last pooling starts inside the image
+    // needed to avoid problems in ceil mode
+    if ((nOutputRows - 1)*dH >= nInputRows + padH)
+      --nOutputRows;
+    if ((nOutputCols  - 1)*dW >= nInputCols  + padW)
+      --nOutputCols;
   }
 
   input = THCudaTensor_newContiguous(state, input);
@@ -147,8 +157,13 @@ __global__ void AvePoolBackward(const int nthreads, const Dtype* const top_diff,
         int wstart = pw * stride_w - pad_w;
         int hend = min(hstart + kernel_h, height + pad_h);
         int wend = min(wstart + kernel_w, width + pad_w);
+        int pool_size = (hend - hstart) * (wend - wstart);
+        hstart = max(hstart, 0);
+        wstart = max(wstart, 0);
+        hend = min(hend, height);
+        wend = min(wend, width);
         if(COUNT_INCLUDE_PAD)
-          gradient += top_diff_slice[ph * pooled_width + pw] / (kernel_w * kernel_h);
+          gradient += top_diff_slice[ph * pooled_width + pw] / pool_size;
         else
           gradient += top_diff_slice[ph * pooled_width + pw] / ((hend - hstart) * (wend - wstart););
       }
@@ -203,7 +218,15 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     nOutputCols = floor(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
     nOutputRows = floor(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
   }
-
+  if (padW || padH)
+  {
+    // ensure that the last pooling starts inside the image
+    // needed to avoid problems in ceil mode
+    if ((nOutputRows - 1)*dH >= nInputRows + padH)
+      --nOutputRows;
+    if ((nOutputCols  - 1)*dW >= nInputCols  + padW)
+      --nOutputCols;
+  }
 
   gradOutput = THCudaTensor_newContiguous(state, gradOutput);
   THCudaTensor_resizeAs(state, gradInput, input);
