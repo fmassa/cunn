@@ -1709,6 +1709,25 @@ function cunntest.SpatialMaxPooling_backward_batch_atomic()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+function cunntest.SpatialAveragePooling_includepad()
+   local net = nn.SpatialAveragePooling(2, 2, 1, 1, 1, 1):cuda()
+   local net_no_include_pad = net:clone()
+   net_no_include_pad:setCountExcludePad()
+   local net_include_pad = net:clone()
+   net_include_pad:setCountIncludePad()
+
+   local input = torch.FloatTensor(1, 1, 1, 1):cuda()
+   input[1][1][1][1] = 3
+   local out_noinclude = net_no_include_pad:forward(input)
+   local out_include = net_include_pad:forward(input)
+   
+   local noinc_out = out_noinclude[1][1][1][1]
+   local inc_out = out_include[1][1][1][1]
+   mytester:assertne(noinc_out, inc_out)
+   mytester:asserteq(3, noinc_out)
+   mytester:asserteq(3/4, inc_out)
+end
+
 function cunntest.SpatialAveragePooling_forward()
    local from = math.random(1,64)
    local to = from
