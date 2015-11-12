@@ -1810,7 +1810,9 @@ function cunntest.SpatialAveragePooling_forward_batch()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    local rescuda = gconv:forward(input)
    a:reset()
    for i = 1,nloop do
@@ -1861,7 +1863,9 @@ function cunntest.SpatialAveragePooling_backward()
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    gconv:forward(input)
    gconv:zeroGradParameters()
    local rescuda = gconv:backward(input, gradOutput)
@@ -1917,7 +1921,9 @@ function cunntest.SpatialAveragePooling_backward_batch()
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    gconv:forward(input)
    gconv:zeroGradParameters()
    local rescuda = gconv:backward(input, gradOutput)

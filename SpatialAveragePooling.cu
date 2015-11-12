@@ -165,7 +165,7 @@ __global__ void AvePoolBackward(const int nthreads, const Dtype* const top_diff,
         if(COUNT_INCLUDE_PAD)
           gradient += top_diff_slice[ph * pooled_width + pw] / pool_size;
         else
-          gradient += top_diff_slice[ph * pooled_width + pw] / ((hend - hstart) * (wend - wstart););
+          gradient += top_diff_slice[ph * pooled_width + pw] / ((hend - hstart) * (wend - wstart));
       }
     }
     bottom_diff[index] = gradient;
