@@ -12,19 +12,23 @@ __global__ void cunn_ClassNLLCriterion_updateOutput_kernel1(float *output,
                                                            float *target,
                                                            float *weights,
                                                            int size_average,
-                                                           int n_classes) {
+                                                           int n_classes,
+                                                           float ignore_label) {
   assert(threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0);
 
   // TODO: T4951791 Reuse code between updateOutput_kernel1 and
   // updateOutput_kernel.
 
   int t = (int)*target - 1;
+  if (!(ignore_label > 0 && ignore_label == t))
+  {
   assert(t >= 0 && t < n_classes);
   float cur_weight = weights ? weights[t] : 1.0f;
   *output = -cur_weight * input[t];
   *total_weight = cur_weight;
   if (size_average && *total_weight > 0) {
     *output /= *total_weight;
+  }
   }
 }
 
@@ -36,7 +40,8 @@ __global__ void cunn_ClassNLLCriterion_updateOutput_kernel(float *output,
                                                            int size_average,
                                                            int nframe,
                                                            int ndim,
-                                                           int n_classes) {
+                                                           int n_classes,
+                                                           float ignore_label) {
   __shared__ float shInputs[NTHREADS], acc_weight[NTHREADS];
   int i, t;
   float cur_weight;
@@ -45,10 +50,13 @@ __global__ void cunn_ClassNLLCriterion_updateOutput_kernel(float *output,
   acc_weight[threadIdx.x] = 0.0f;
   for (i = threadIdx.x; i < nframe; i += NTHREADS) {
       t = target[i] - 1;
+      if (!(ignore_label > 0 && ignore_label == t))
+      {
       assert(t >= 0 && t < n_classes);
       cur_weight = weights ? weights[t] : 1.0f;
       shInputs[threadIdx.x] -= input[i * ndim + t] * cur_weight;
       acc_weight[threadIdx.x] += cur_weight;
+      }
   }
   __syncthreads();
 
@@ -73,15 +81,22 @@ __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel1(
   float* target,
   float* total_weight,
   int size_average,
-  int n_classes)
+  int n_classes,
+  float ignore_label)
 {
   if (*total_weight <= 0) {
     return;
   }
   float norm = size_average ? (1.0f / *total_weight) : 1.0f;
   int t = (int)*target - 1;
+  if (!(ignore_label > 0 && ignore_label == t))
+  {
   assert(t >= 0 && t < n_classes);
   gradInput[t] = -(weights ? weights[t] : 1.0f) * norm;
+  }else
+  {
+    gradInput[t] = 0.0f;
+  }
 }
 
 __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel(
@@ -102,12 +117,18 @@ __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel(
 
   for (i = threadIdx.x; i < nframe; i += NTHREADS) {
     t = (int)target[i] - 1;
+    if (!(ignore_label > 0 && ignore_label == t))
+    {
     assert(t >= 0 && t < n_classes);
     gradInput[i * ndim + t] = -(weights ? weights[t] : 1.0f) * norm;
+    }else
+    {
+      gradInput[i * ndim + t] = 0.0f;
+    }
   }
 }
 
-void THNN_CudaClassNLLCriterion_updateOutput(THCState *state, THCudaTensor *input, THCudaTensor *target, THCudaTensor *output, bool sizeAverage, THCudaTensor *weights, THCudaTensor *total_weight) {
+void THNN_CudaClassNLLCriterion_updateOutput(THCState *state, THCudaTensor *input, THCudaTensor *target, THCudaTensor *output, bool sizeAverage, THCudaTensor *weights, THCudaTensor *total_weight, float ignore_label) {
   if (THCudaTensor_nDimension(state, target) > 1) {
     THError("multi-target not supported");
   }
@@ -148,7 +169,8 @@ void THNN_CudaClassNLLCriterion_updateOutput(THCState *state, THCudaTensor *inpu
         target_data,
         weights_data,
         sizeAverage,
-        n_classes
+        n_classes,
+        ignore_label
     );
 
   } else if (THCudaTensor_nDimension(state, input) == 2) {
@@ -162,7 +184,8 @@ void THNN_CudaClassNLLCriterion_updateOutput(THCState *state, THCudaTensor *inpu
         sizeAverage,
         THCudaTensor_size(state, input, 0),
         THCudaTensor_size(state, input, 1),
-        n_classes
+        n_classes,
+        ignore_label
     );
   }
 
@@ -177,7 +200,7 @@ void THNN_CudaClassNLLCriterion_updateOutput(THCState *state, THCudaTensor *inpu
   THCudaTensor_free(state, input);
 }
 
-void THNN_CudaClassNLLCriterion_updateGradInput(THCState *state, THCudaTensor *input, THCudaTensor *target, THCudaTensor *gradInput, bool sizeAverage, THCudaTensor *weights, THCudaTensor *total_weight) {
+void THNN_CudaClassNLLCriterion_updateGradInput(THCState *state, THCudaTensor *input, THCudaTensor *target, THCudaTensor *gradInput, bool sizeAverage, THCudaTensor *weights, THCudaTensor *total_weight, float ignore_label) {
   if (THCudaTensor_nDimension(state, target) > 1) {
     THError("multi-target not supported");
   }
@@ -218,7 +241,8 @@ void THNN_CudaClassNLLCriterion_updateGradInput(THCState *state, THCudaTensor *i
         target_data,
         total_weight_data,
         sizeAverage,
-        n_classes
+        n_classes,
+        ignore_label
     );
   } else {
     cunn_ClassNLLCriterion_updateGradInput_kernel
@@ -230,7 +254,8 @@ void THNN_CudaClassNLLCriterion_updateGradInput(THCState *state, THCudaTensor *i
         sizeAverage,
         THCudaTensor_size(state, input, 0),
         THCudaTensor_size(state, input, 1),
-        n_classes
+        n_classes,
+        ignore_label
     );
   }
   cudaError errcode = cudaGetLastError();
