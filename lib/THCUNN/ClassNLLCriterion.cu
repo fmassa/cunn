@@ -107,7 +107,8 @@ __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel(
   int size_average,
   int nframe,
   int ndim,
-  int n_classes)
+  int n_classes,
+  float ignore_label)
 {
   if (*total_weight <= 0) {
     return;
